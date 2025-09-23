@@ -2,6 +2,7 @@
 # Implement the specified commands to complete the assignment
 # Full assignment specification on Canvas
 
+import random
 import sys
 
 class CommandInterface:
@@ -73,7 +74,19 @@ class CommandInterface:
             Sets the winning score as <score_cutoff>.
         '''
 
+        if len(args) != 4:
+            print("init_game requires 4 arguments.", file=sys.stderr)
+            return False
+
         self.num_cols, self.num_rows, self.handicap, self.score_cutoff = args
+
+        self.num_cols = int(self.num_cols)
+        self.num_rows = int(self.num_rows)
+        self.handicap = float(self.handicap)
+        self.score_cutoff = float(self.score_cutoff) # check if this is nonnegative 
+
+        self.current_player = "1" # Player 1 starts
+        self.moves = [] # List of moves played
 
         self.board = []
 
@@ -90,25 +103,53 @@ class CommandInterface:
             Checks if the current player can play at position (<col>, <row>) on the board.
         '''
 
-        if self.board[args[1]][args[1]] == "_":
+        if self.check_legal(args):
+            print("Yes")
             return True
         else:
+            print("No")
             return False
     
+    def check_legal(self, args):
+
+        player1_score, player2_score = self.calculate_score()
+        if player1_score >= self.score_cutoff or player2_score >= self.score_cutoff:
+            return False
+        return self.board[args[1]][args[0]] == "_"
+
     def play(self, args):
         '''
             >> play <col> <row>
             Places the current player's piece at position (<col>, <row>). Check if the move is legal before playing it.
         '''
-        raise NotImplementedError("This command is not yet implemented.")
-        return True
-    
+        
+        if self.check_legal(args):
+            self.board[args[1]][args[0]] = self.current_player
+            if self.current_player == "1":
+                self.current_player = "2"
+            else:
+                self.current_player = "1"
+            
+            self.moves.append(args)
+            return True
+        else:
+            return False
+        
     def genmove(self, args):
         '''
             >> genmove
             Generates and plays a random valid move.
         '''
-        raise NotImplementedError("This command is not yet implemented.")
+        
+        i = random.randint(0, self.num_rows - 1)
+        j = random.randint(0, self.num_cols - 1)
+
+        while not self.legal([j, i]):
+            i = random.randint(0, self.num_rows - 1)
+            j = random.randint(0, self.num_cols - 1)
+        
+        self.play([j, i])
+
         return True
 
     def undo(self, args):
@@ -116,7 +157,12 @@ class CommandInterface:
             >> undo
             Undoes the last move.
         '''
-        raise NotImplementedError("This command is not yet implemented.")
+        if len(self.moves) == 0:
+            return False
+        
+        last_move = self.moves.pop()
+
+        self.board[last_move[1]][last_move[0]] = "_"
         return True
 
     def score(self, args):
@@ -124,23 +170,97 @@ class CommandInterface:
             >> score
             Prints the scores.
         '''
-        raise NotImplementedError("This command is not yet implemented.")
+
+        print(*self.calculate_score())
         return True
+
+    def calculate_score(self):
+        self.player1_score = 0
+        self.player2_score = self.handicap
+        
+        for i in range(self.num_rows):
+            for j in range(self.num_cols):
+                if self.board[i][j] != "_":
+                    
+                    cell = self.board[i][j]
+
+                    # check right
+                    if j == 0 or self.board[i][j - 1] != cell:
+                        count_right = 1
+                        while j + count_right < self.num_cols and self.board[i][j + count_right] == cell:
+                            count_right += 1
+
+                    # check bottom right diagonal
+                    if (j == 0 and i == 0) or (self.board[i - 1 ][j - 1] != cell):
+                        count_botright = 1
+                        while (j + count_botright < self.num_cols) and (i + count_botright < self.num_rows) and self.board[i + count_botright][j + count_botright] == cell:
+                            count_botright += 1
+
+                    # check bottom
+                    if i == 0 or self.board[i-1][j] != cell:
+                        count_bot = 1
+                        while i + count_bot < self.num_rows and self.board[i + count_bot][j] == cell:
+                            count_bot += 1
+
+                    # check bottom left diagonal
+                    if ((j == self.num_cols + 1) and i == 0) or (self.board[i - 1][j + 1] != cell):
+                        count_botleft = 1
+                        while (j - count_botleft > 0) and (i + count_botleft < self.num_rows) and self.board[i + count_botleft][j - count_botleft] == cell:
+                            count_botleft += 1
+                    
+                    # point calculation and score update
+                    right_points = 2**(count_right - 1) if count_right > 0 else 0
+                    botright_points = 2**(count_botright - 1) if count_botright > 0 else 0
+                    bot_points = 2**(count_bot - 1) if count_bot > 0 else 0
+                    botleft_points = 2**(count_botleft - 1) if count_botleft > 0 else 0
+
+                    points = right_points + botright_points + bot_points + botleft_points
+
+                    if cell == "1":
+                        player1_score += points
+                    elif cell == "2":
+                        player2_score += points
+        
+        return (player1_score, player2_score)
 
     def winner(self, args):
         '''
             >> winner
             Prints the winner information.
         '''
-        raise NotImplementedError("This command is not yet implemented.")
-        return True
+        player1_score, player2_score = self.calculate_score()
+
+        if self.score_cutoff == 0:
+            filled = True
+            for i in range(self.num_rows):
+                for j in range(self.num_cols):
+                    if self.board[i][j] == "_":
+                        filled = False
+                        break
+                if not filled:
+                    break
+            print("Unknown" if not filled else ("1" if player1_score > player2_score else ("2" if player2_score > player1_score else "Tie")))
+            return True
+        else:
+            if player1_score >= self.score_cutoff and player2_score < self.score_cutoff:
+                print("1")
+            elif player2_score >= self.score_cutoff and player1_score < self.score_cutoff:
+                print("2")
+            else:
+                print("Unknown")
+            return True
 
     def show(self, args):
         '''
             >> show
             Shows the game board.
         '''
-        raise NotImplementedError("This command is not yet implemented.")
+        
+        for i in range(self.num_rows):
+            for j in range(self.num_cols):
+                print(self.board[i][j], end=" ")
+            print()
+        
         return True
     
     #======================================================================================
