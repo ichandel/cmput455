@@ -103,6 +103,9 @@ class CommandInterface:
             Checks if the current player can play at position (<col>, <row>) on the board.
         '''
 
+        args[0] = int(args[0])
+        args[1] = int(args[1])
+        
         if self.check_legal(args):
             print("Yes")
             return True
@@ -112,8 +115,12 @@ class CommandInterface:
     
     def check_legal(self, args):
 
+        
+        args[0] = int(args[0])
+        args[1] = int(args[1])
+
         player1_score, player2_score = self.calculate_score()
-        if player1_score >= self.score_cutoff or player2_score >= self.score_cutoff:
+        if self.score_cutoff > 0 and (player1_score >= self.score_cutoff or player2_score >= self.score_cutoff):
             return False
         return self.board[args[1]][args[0]] == "_"
 
@@ -123,8 +130,14 @@ class CommandInterface:
             Places the current player's piece at position (<col>, <row>). Check if the move is legal before playing it.
         '''
         
+        if len(args) != 2:
+            print("play requires 2 arguments.", file=sys.stderr)
+            return False
+        x = int(args[0]) # column
+        y = int(args[1]) # row
+
         if self.check_legal(args):
-            self.board[args[1]][args[0]] = self.current_player
+            self.board[y][x] = self.current_player
             if self.current_player == "1":
                 self.current_player = "2"
             else:
@@ -144,7 +157,14 @@ class CommandInterface:
         i = random.randint(0, self.num_rows - 1)
         j = random.randint(0, self.num_cols - 1)
 
-        while not self.legal([j, i]):
+        if self.check_filled():
+            return False
+        
+        player1_score, player2_score = self.calculate_score()
+        if self.score_cutoff > 0 and (player1_score >= self.score_cutoff or player2_score >= self.score_cutoff):
+            return False
+
+        while not self.check_legal([j, i]):
             i = random.randint(0, self.num_rows - 1)
             j = random.randint(0, self.num_cols - 1)
         
@@ -163,6 +183,12 @@ class CommandInterface:
         last_move = self.moves.pop()
 
         self.board[last_move[1]][last_move[0]] = "_"
+
+        if self.current_player == "1":
+            self.current_player = "2"
+        else:
+            self.current_player = "1"
+
         return True
 
     def score(self, args):
@@ -175,8 +201,8 @@ class CommandInterface:
         return True
 
     def calculate_score(self):
-        self.player1_score = 0
-        self.player2_score = self.handicap
+        player1_score = 0
+        player2_score = self.handicap
         
         for i in range(self.num_rows):
             for j in range(self.num_cols):
@@ -222,6 +248,13 @@ class CommandInterface:
                         player2_score += points
         
         return (player1_score, player2_score)
+    
+    def check_filled(self):
+        for i in range(self.num_rows):
+            for j in range(self.num_cols):
+                if self.board[i][j] == "_":
+                    return False
+        return True
 
     def winner(self, args):
         '''
@@ -231,20 +264,13 @@ class CommandInterface:
         player1_score, player2_score = self.calculate_score()
 
         if self.score_cutoff == 0:
-            filled = True
-            for i in range(self.num_rows):
-                for j in range(self.num_cols):
-                    if self.board[i][j] == "_":
-                        filled = False
-                        break
-                if not filled:
-                    break
+            filled = self.check_filled()
             print("Unknown" if not filled else ("1" if player1_score > player2_score else ("2" if player2_score > player1_score else "Tie")))
             return True
         else:
-            if player1_score >= self.score_cutoff and player2_score < self.score_cutoff:
+            if (player1_score >= self.score_cutoff or self.check_filled()) and player1_score > player2_score:
                 print("1")
-            elif player2_score >= self.score_cutoff and player1_score < self.score_cutoff:
+            elif (player2_score >= self.score_cutoff or self.check_filled()) and player2_score > player1_score:
                 print("2")
             else:
                 print("Unknown")
