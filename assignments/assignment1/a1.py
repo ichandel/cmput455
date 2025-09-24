@@ -76,25 +76,27 @@ class CommandInterface:
 
         if len(args) != 4:
             print("init_game requires 4 arguments.", file=sys.stderr)
-            return False
+            raise Exception("init_game requires 4 arguments.")
 
-        self.num_cols, self.num_rows, self.handicap, self.score_cutoff = args
+        nc = int(args[0])
+        nr = int(args[1])
+        h = float(args[2])
+        sc = float(args[3]) # check if this is nonnegative 
 
-        self.num_cols = int(self.num_cols)
-        self.num_rows = int(self.num_rows)
-        self.handicap = float(self.handicap)
-        self.score_cutoff = float(self.score_cutoff) # check if this is nonnegative 
+
+        self.num_cols = nc
+        self.num_rows = nr
+        self.handicap = h
+        self.score_cutoff = sc
+
+        self.p1score = 0
+        self.p2score = h
+        
 
         self.current_player = "1" # Player 1 starts
         self.moves = [] # List of moves played
 
-        self.board = []
-
-        for i in range(self.num_rows):
-            current_row = []
-            for j in range(self.num_cols):
-                current_row.append("_")
-            self.board.append(current_row)
+        self.board = [["_"] * self.num_cols for _ in range(self.num_rows)]
         return True
     
     def legal(self, args):
@@ -103,26 +105,37 @@ class CommandInterface:
             Checks if the current player can play at position (<col>, <row>) on the board.
         '''
 
-        args[0] = int(args[0])
-        args[1] = int(args[1])
+        if len(args) != 2:
+            print("legal requires 2 arguments.", file=sys.stderr)
+            raise Exception("legal requires 2 arguments.")
         
-        if self.check_legal(args):
-            print("Yes")
-            return True
+        col = int(args[0])
+        row = int(args[1])
+        
+        if self.check_legal([col, row]):
+            print("yes")
         else:
-            print("No")
-            return False
+            print("no")
+        return True
     
     def check_legal(self, args):
 
         
-        args[0] = int(args[0])
-        args[1] = int(args[1])
+        col = int(args[0])
+        row = int(args[1])
 
-        player1_score, player2_score = self.calculate_score()
-        if self.score_cutoff > 0 and (player1_score >= self.score_cutoff or player2_score >= self.score_cutoff):
+        if not self.in_bounds(col, row):
             return False
-        return self.board[args[1]][args[0]] == "_"
+        
+        # Check if the game has already been won
+
+        
+        if self.score_cutoff > 0:
+            self.calculate_score()
+            if (self.p1score >= self.score_cutoff or self.p2score >= self.score_cutoff):
+                return False
+            
+        return self.board[row][col] == "_"
 
     def play(self, args):
         '''
@@ -132,21 +145,23 @@ class CommandInterface:
         
         if len(args) != 2:
             print("play requires 2 arguments.", file=sys.stderr)
-            return False
-        x = int(args[0]) # column
-        y = int(args[1]) # row
+            raise Exception("play requires 2 arguments.")
+                
+        col = int(args[0]) # column
+        row = int(args[1]) # row
 
-        if self.check_legal(args):
-            self.board[y][x] = self.current_player
-            if self.current_player == "1":
-                self.current_player = "2"
-            else:
-                self.current_player = "1"
-            
-            self.moves.append(args)
-            return True
-        else:
-            return False
+        if not self.check_legal(args):
+            raise Exception("Illegal move.")
+        
+        self.board[row][col] = self.current_player
+        self.current_player = "2" if self.current_player == "1" else "1"
+        
+        self.moves.append((col, row))
+
+        return True
+    
+    def in_bounds(self, col, row):
+        return 0 <= col < self.num_cols and 0 <= row < self.num_rows
         
     def genmove(self, args):
         '''
@@ -154,41 +169,39 @@ class CommandInterface:
             Generates and plays a random valid move.
         '''
         
-        i = random.randint(0, self.num_rows - 1)
-        j = random.randint(0, self.num_cols - 1)
-
         if self.check_filled():
-            return False
+            print("resign")
+            return True
         
-        player1_score, player2_score = self.calculate_score()
-        if self.score_cutoff > 0 and (player1_score >= self.score_cutoff or player2_score >= self.score_cutoff):
-            return False
-
-        while not self.check_legal([j, i]):
-            i = random.randint(0, self.num_rows - 1)
-            j = random.randint(0, self.num_cols - 1)
+        # check if the game has already been won
+        if self.score_cutoff > 0:
+            self.calculate_score()
+            if (self.p1score >= self.score_cutoff or self.p2score >= self.score_cutoff):
+                print("resign")
+                return True
         
-        self.play([j, i])
-
-        return True
+        while True:
+            row = random.randint(0, self.num_rows - 1)
+            col = random.randint(0, self.num_cols - 1)
+            if self.check_legal([col, row]):
+                print(col, row)
+                self.play([col, row])
+                return True
 
     def undo(self, args):
         '''
             >> undo
             Undoes the last move.
         '''
+
         if len(self.moves) == 0:
-            return False
+            raise Exception("No moves to undo.")
         
-        last_move = self.moves.pop()
+        last_col, last_row = self.moves.pop()
 
-        self.board[last_move[1]][last_move[0]] = "_"
+        self.board[last_row][last_col] = "_"
 
-        if self.current_player == "1":
-            self.current_player = "2"
-        else:
-            self.current_player = "1"
-
+        self.current_player = "2" if self.current_player == "1" else "1"
         return True
 
     def score(self, args):
@@ -197,62 +210,71 @@ class CommandInterface:
             Prints the scores.
         '''
 
-        print(*self.calculate_score())
+        self.calculate_score()
+        print(f"{self.p1score} {self.p2score}")
         return True
 
     def calculate_score(self):
         player1_score = 0
         player2_score = self.handicap
+
+        # avoids double counting, by keeping track of which cells have already been counted in a line
+        in_line = [[False] * self.num_cols for _ in range(self.num_rows)]
+
+
+        directions = [(1,0), (1,1), (0,1), (-1,1)] # right, bottom right diagonal, bottom, bottom left diagonal
+
+        for row in range(self.num_rows):
+            for col in range(self.num_cols):
+                cell = self.board[row][col]
+
+                if cell == "_":
+                    continue
+                
+                for dir_col, dir_row in directions:
+                    prev_col = col - dir_col
+                    prev_row = row - dir_row
+
+                    if self.in_bounds(prev_col, prev_row) and self.board[prev_row][prev_col] == cell:
+                        continue
+
+                    line_length = 0
+                    temp_col, temp_row = col, row
+                    while self.in_bounds(temp_col, temp_row) and self.board[temp_row][temp_col] == cell:
+                        line_length += 1
+                        temp_col += dir_col
+                        temp_row += dir_row
+
+                    if line_length >= 2:
+                        points = 2 ** (line_length - 1)
+                        if cell == "1":
+                            player1_score += points
+                        else:
+                            player2_score += points
+                        
+                        temp_col, temp_row = col, row
+                        for _ in range(line_length):
+                            in_line[temp_row][temp_col] = True
+                            temp_col += dir_col
+                            temp_row += dir_row
+                
         
-        for i in range(self.num_rows):
-            for j in range(self.num_cols):
-                if self.board[i][j] != "_":
-                    
-                    cell = self.board[i][j]
-
-                    # check right
-                    if j == 0 or self.board[i][j - 1] != cell:
-                        count_right = 1
-                        while j + count_right < self.num_cols and self.board[i][j + count_right] == cell:
-                            count_right += 1
-
-                    # check bottom right diagonal
-                    if (j == 0 and i == 0) or (self.board[i - 1 ][j - 1] != cell):
-                        count_botright = 1
-                        while (j + count_botright < self.num_cols) and (i + count_botright < self.num_rows) and self.board[i + count_botright][j + count_botright] == cell:
-                            count_botright += 1
-
-                    # check bottom
-                    if i == 0 or self.board[i-1][j] != cell:
-                        count_bot = 1
-                        while i + count_bot < self.num_rows and self.board[i + count_bot][j] == cell:
-                            count_bot += 1
-
-                    # check bottom left diagonal
-                    if ((j == self.num_cols + 1) and i == 0) or (self.board[i - 1][j + 1] != cell):
-                        count_botleft = 1
-                        while (j - count_botleft > 0) and (i + count_botleft < self.num_rows) and self.board[i + count_botleft][j - count_botleft] == cell:
-                            count_botleft += 1
-                    
-                    # point calculation and score update
-                    right_points = 2**(count_right - 1) if count_right > 0 else 0
-                    botright_points = 2**(count_botright - 1) if count_botright > 0 else 0
-                    bot_points = 2**(count_bot - 1) if count_bot > 0 else 0
-                    botleft_points = 2**(count_botleft - 1) if count_botleft > 0 else 0
-
-                    points = right_points + botright_points + bot_points + botleft_points
-
+        for row in range(self.num_rows):
+            for col in range(self.num_cols):
+                cell = self.board[row][col]
+                if cell != "_" and not in_line[row][col]:
                     if cell == "1":
-                        player1_score += points
-                    elif cell == "2":
-                        player2_score += points
-        
-        return (player1_score, player2_score)
+                        player1_score += 1
+                    else:
+                        player2_score += 1
+
+        self.p1score = player1_score
+        self.p2score = player2_score
     
     def check_filled(self):
-        for i in range(self.num_rows):
-            for j in range(self.num_cols):
-                if self.board[i][j] == "_":
+        for row in range(self.num_rows):
+            for col in range(self.num_cols):
+                if self.board[row][col] == "_":
                     return False
         return True
 
@@ -261,19 +283,25 @@ class CommandInterface:
             >> winner
             Prints the winner information.
         '''
-        player1_score, player2_score = self.calculate_score()
+        self.calculate_score()
 
         if self.score_cutoff == 0:
-            filled = self.check_filled()
-            print("Unknown" if not filled else ("1" if player1_score > player2_score else ("2" if player2_score > player1_score else "Tie")))
+            if not self.check_filled():
+                print("unknown")
+                return True
+            if self.p1score > self.p2score:
+                print("1")
+            if self.p2score > self.p1score:
+                print("2")
             return True
         else:
-            if (player1_score >= self.score_cutoff or self.check_filled()) and player1_score > player2_score:
+            filled = self.check_filled()
+            if (self.p1score >= self.score_cutoff or filled) and self.p1score > self.p2score:
                 print("1")
-            elif (player2_score >= self.score_cutoff or self.check_filled()) and player2_score > player1_score:
+            elif (self.p2score >= self.score_cutoff or filled) and self.p2score > self.p1score:
                 print("2")
             else:
-                print("Unknown")
+                print("unknown")
             return True
 
     def show(self, args):
@@ -282,11 +310,8 @@ class CommandInterface:
             Shows the game board.
         '''
         
-        for i in range(self.num_rows):
-            for j in range(self.num_cols):
-                print(self.board[i][j], end=" ")
-            print()
-        
+        for row in range(self.num_rows):
+            print(" ".join(self.board[row]))
         return True
     
     #======================================================================================
