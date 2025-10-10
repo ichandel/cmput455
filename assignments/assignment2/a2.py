@@ -295,8 +295,47 @@ class CommandInterface:
     # winning_move should be a (x,y) tuple if one exists, None otherwise
     # You can call whatever functions you like from this to implement a solver but make sure this returns the correct output for use in the solve function
     def solver_implementation(self):
-        pass
+        
+        start_player = self.to_play
+        value, first_move = self.negamax(-1, 1, True, start_player)
 
+        winner = start_player if value == 1 else (2 if start_player == 1 else 1)
+
+        if winner == start_player:
+            winning_move = first_move
+        else:
+            winning_move = None
+
+        return winner, winning_move
+
+    def negamax(self, alpha, beta, root=False, start_player=None):
+        terminal, winner = self.is_terminal()
+        if terminal:
+            if winner == start_player:
+                return 1, None
+            else:
+                return -1, None
+
+        best_value = -float('inf')
+        best_move = None
+
+        for move in self.get_moves():
+            self.make_move(move[0], move[1])
+            value, _ = self.negamax(-beta, -alpha, False, start_player)
+            value = -value
+            self.undo_move(move[0], move[1])
+
+            if value > best_value:
+                best_value = value
+                if root:
+                    best_move = move
+
+            alpha = max(alpha, value)
+            if alpha >= beta:
+                break
+
+        return best_value, best_move
+    
     # Print out the winner under optimal play for the current board position
     # If the winner is the current player, print out any winning move
     # If you cannot solve the position within the time limit, print "unknown"
