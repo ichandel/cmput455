@@ -268,7 +268,17 @@ class CommandInterface:
     
     # Returns is_terminal, winner
     # Assumes no draws
+
     def is_terminal(self):
+
+        # I added this, speeds up the terminal check for score cutoff games
+        # by avoiding the full board scan if there are still empty spaces
+        if self.score_cutoff == float("inf"):
+            for i in range(self.height):
+                for j in range(self.width):
+                    if self.board[i][j] == 0:
+                        return False, 0
+
         p1_score, p2_score = self.calculate_score()
         if p1_score >= self.score_cutoff:
             return True, 1
@@ -295,46 +305,117 @@ class CommandInterface:
     # winning_move should be a (x,y) tuple if one exists, None otherwise
     # You can call whatever functions you like from this to implement a solver but make sure this returns the correct output for use in the solve function
     def solver_implementation(self):
-        
-        start_player = self.to_play
-        value, first_move = self.negamax(-1, 1, True, start_player)
 
+        self.TT = {}  # transposition Table
+        
+        # start the minimax search
+        start_player = self.to_play
+        value, first_move = self.minimax(start_player, True)
+
+        # determine the winner based on the minimax value
         winner = start_player if value == 1 else (2 if start_player == 1 else 1)
 
+        # determine displaying winning move
         if winner == start_player:
             winning_move = first_move
         else:
             winning_move = None
 
         return winner, winning_move
+    
+    def get_key(self):
+        """ Create a unique key for the current board position for use in the transposition table """
+        return (self.to_play, tuple(tuple(row) for row in self.board))
+    
+    def most_neighbours_heuristic(self, move):
+        """ A heuristic function that scores moves based on the number of neighbouring pieces.
+        This heuristic function is taken from the public CMPUT 455 GitHub repository."""
+        score = 0
+        x = move[0]
+        y = move[1]
+        if x > 0 and self.board[y][x-1] != 0:
+            score += 1
+        if x < self.width-1 and self.board[y][x+1] != 0:
+            score += 1
+        if y > 0 and self.board[y-1][x] != 0:
+            score += 1
+        if y < self.height-1 and self.board[y+1][x] != 0:
+            score += 1
+        if x > 0 and y > 0 and self.board[y-1][x-1] != 0:
+            score += 1
+        if x > 0 and y < self.height-1 and self.board[y+1][x-1] != 0:
+            score += 1
+        if x < self.width-1 and y > 0 and self.board[y-1][x+1] != 0:
+            score += 1
+        if x < self.width-1 and y < self.height-1 and self.board[y+1][x+1] != 0:
+            score += 1
+        return score
 
-    def negamax(self, alpha, beta, root=False, start_player=None):
+    def minimax(self, start_player, root=False):
+        """ Minimax algorithm with transposition table."""
+        
+        # check if terminal state reached
         terminal, winner = self.is_terminal()
         if terminal:
-            if winner == start_player:
-                return 1, None
-            else:
-                return -1, None
+            return (1 if winner == start_player else -1), None
+        
+        # check transposition table if state has been seen before
+        key = self.get_key()
+        if key in self.TT:
+            state = self.TT[key]
+            return state['value'], (state['winning_move'] if root else None)
 
-        best_value = -float('inf')
-        best_move = None
+        # order moves using heuristic
+        ordered_moves = sorted(self.get_moves(), key=lambda x: self.most_neighbours_heuristic(x), reverse=True)
 
-        for move in self.get_moves():
-            self.make_move(move[0], move[1])
-            value, _ = self.negamax(-beta, -alpha, False, start_player)
-            value = -value
-            self.undo_move(move[0], move[1])
+        # minimax search
+        if self.to_play == start_player:
+            best_value = -float('inf')
+            best_move = None
 
-            if value > best_value:
-                best_value = value
-                if root:
-                    best_move = move
+            # explore each move
+            for (x, y) in ordered_moves:
+                self.make_move(x, y)
+                value, _ = self.minimax(start_player, False)
+                self.undo_move(x, y)
 
-            alpha = max(alpha, value)
-            if alpha >= beta:
-                break
+                # update best value and move
+                if value > best_value:
+                    best_value = value
+                    if root:
+                        best_move = (x, y)
+                
+                # if winning move found, break early
+                if best_value == 1:
+                    break
 
-        return best_value, best_move
+            # store value and winning move in transposition table
+            self.TT[key] = {'value': best_value, 'winning_move': best_move}
+            return best_value, (best_move if root else None)
+
+        else:
+            best_value = float('inf')
+            best_move = None
+
+            # explore each move
+            for (x, y) in ordered_moves:
+                self.make_move(x, y)
+                value, _ = self.minimax(start_player, False)
+                self.undo_move(x, y)
+
+                # update best value and move
+                if value < best_value:
+                    best_value = value
+                    if root:
+                        best_move = (x, y)
+
+                # if winning move found, break early
+                if best_value == -1:
+                    break
+
+            # store value and winning move in transposition table
+            self.TT[key] = {'value': best_value, 'winning_move': best_move}
+            return best_value, (best_move if root else None)
     
     # Print out the winner under optimal play for the current board position
     # If the winner is the current player, print out any winning move
