@@ -369,12 +369,34 @@ class CommandInterface:
     
     # new function to be implemented for assignment 3
     def load_patterns(self, args):
-        raise NotImplementedError("This command is not yet implemented.")
-        return True
+        self.patterns = []
+        if len(args) < 1:
+            raise Exception("Not enough arguments")
+        
+        filename = args[0]
+        try:
+            parsed = []
+            with open(filename, 'r') as f:
+                for raw in f:
+                    line = raw.strip()
+                    if not line:
+                        continue
+                    (pattern, weight) = line.strip().split()
+                    if pattern:
+                        parsed.append((pattern, float(weight)))
+            self.patterns = parsed
+            return True
+        
+        except FileNotFoundError:
+            raise Exception(f"File '{filename}' not found.")
+        except Exception as e:
+            raise e        
     
     # new function to be implemented for assignment 3
     def policy_moves(self, args):
-        raise NotImplementedError("This command is not yet implemented.")
+        if not self.patterns:
+            raise Exception("No patterns loaded.")
+        
         return True
     
     # new function to be implemented for assignment 3
