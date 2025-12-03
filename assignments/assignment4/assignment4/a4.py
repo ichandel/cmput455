@@ -322,6 +322,7 @@ class CommandInterface:
             self.score_total = 0
             self.visits = 0
             self.children = []
+            self.untried_moves = None  # Lazy expansion
 
     def random_walk(self):
         score = self.get_relative_score()
@@ -336,16 +337,17 @@ class CommandInterface:
         self.undo_move(rand_move[0], rand_move[1])
         return score
     
-    def ucb_select(self, node, c=1):
+    def ucb_select(self, node, c=1.41421356237):
         best_child = None
         best_ucb = float("-inf")
+        parent_visits = max(node.visits, 1)  # Guard against log(0)
         
         for child in node.children:
             if child.visits == 0:
                 return child
             
             exploit = -child.score_total / child.visits
-            explore = c * math.sqrt(math.log(node.visits) / child.visits)
+            explore = c * math.sqrt(math.log(parent_visits) / child.visits)
             ucb = exploit + explore
             
             if ucb > best_ucb:
@@ -355,33 +357,61 @@ class CommandInterface:
         return best_child
     
     def expand_node(self, node):
+        # Initialize untried_moves lazily on first expand
+        if node.untried_moves is None:
+            node.untried_moves = self.get_moves()
+        
+        # Check terminal
         score = self.get_relative_score()
         if score is not None:
-            return -score
-        moves = self.get_moves()
-        for move in moves:
-            child_node = self.MCTS_node(move=move)
-            node.children.append(child_node)
+            return score
         
-        child = self.ucb_select(node)
-        self.make_move(child.move[0], child.move[1])
-        child.score_total += self.random_walk()
-        child.visits += 1
-        self.undo_move(child.move[0], child.move[1])
-        return child.score_total
+        # No moves left to expand
+        if not node.untried_moves:
+            return 0.0
+        
+        # Lazy expansion: expand one child at a time
+        move = node.untried_moves.pop()
+        child_node = self.MCTS_node(move=move)
+        node.children.append(child_node)
+        
+        self.make_move(move[0], move[1])
+        child_value = self.random_walk()  # Value from child's perspective
+        self.undo_move(move[0], move[1])
+        
+        child_node.score_total += child_value
+        child_node.visits += 1
+        return -child_value  # Negate for parent's perspective
     
     def selection(self, node):
-        if len(node.children) == 0:
-            score = -self.expand_node(node)
-        else:
-            child = self.ucb_select(node)
-            self.make_move(child.move[0], child.move[1])
-            score = -self.selection(child)
-            self.undo_move(child.move[0], child.move[1])
+        # Initialize untried_moves lazily
+        if node.untried_moves is None:
+            node.untried_moves = self.get_moves()
         
-        node.score_total += score
+        # Check terminal state
+        score = self.get_relative_score()
+        if score is not None:
+            node.score_total += score
+            node.visits += 1
+            return score
+        
+        # Expand if untried moves remain
+        if node.untried_moves:
+            value = self.expand_node(node)
+            node.score_total += value
+            node.visits +=   1
+            return value
+        
+        # Otherwise, select best child by UCB
+        child = self.ucb_select(node)
+        self.make_move(child.move[0], child.move[1])
+        value = -self.selection(child)
+        self.undo_move(child.move[0], child.move[1])
+        
+        # selection(child) already updated child stats, just update parent
+        node.score_total += value
         node.visits += 1
-        return score
+        return value
 
 
 if __name__ == "__main__":
