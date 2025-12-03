@@ -297,7 +297,8 @@ class CommandInterface:
         
         root_node = self.MCTS_node(move=None)
         start_time = time.time()
-        while time.time() - start_time < self.time_limit - 0.1:
+        # Use a small safety margin to maximize iterations
+        while time.time() - start_time < self.time_limit - 0.02:
             self.selection(root_node)
         
         # Select best move by visit count
@@ -325,17 +326,50 @@ class CommandInterface:
             self.untried_moves = None  # Lazy expansion
 
     def random_walk(self):
+        # Terminal check
         score = self.get_relative_score()
         if score is not None:
             return score
+
         moves = self.get_moves()
         if not moves:
             return 0.0
-        rand_move = moves[random.randint(0, len(moves)-1)]
-        self.make_move(rand_move[0], rand_move[1])
-        score = -self.random_walk()
-        self.undo_move(rand_move[0], rand_move[1])
-        return score
+
+        # Epsilon-greedy rollout: bias toward moves improving immediate score
+        # 70% choose a move that maximizes immediate relative score; else random
+        if random.random() < 0.7:
+            best_move = None
+            best_val = -float('inf')
+            for (x, y) in moves:
+                self.make_move(x, y)
+                val = -self.get_immediate_relative_score_fallback()
+                self.undo_move(x, y)
+                if val > best_val:
+                    best_val = val
+                    best_move = (x, y)
+            move = best_move if best_move is not None else moves[random.randint(0, len(moves)-1)]
+        else:
+            move = moves[random.randint(0, len(moves)-1)]
+
+        self.make_move(move[0], move[1])
+        value = -self.random_walk()
+        self.undo_move(move[0], move[1])
+        return value
+
+    def get_immediate_relative_score_fallback(self):
+        # Similar to get_relative_score but treats non-terminal as current snapshot difference
+        p1, p2 = self.calculate_score()
+        # If cutoff reached, return terminal perspective
+        if p1 >= self.score_cutoff or p2 >= self.score_cutoff:
+            if self.to_play == 1:
+                return p1 - p2
+            else:
+                return p2 - p1
+        # Otherwise, snapshot difference
+        if self.to_play == 1:
+            return p1 - p2
+        else:
+            return p2 - p1
     
     def ucb_select(self, node, c=1.41421356237):
         best_child = None
