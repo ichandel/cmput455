@@ -296,8 +296,9 @@ class CommandInterface:
             return True
         
         root_node = self.MCTS_node(move=None)
+        root_node.untried_moves = root_moves[:]
         start_time = time.time()
-        while time.time() - start_time < self.time_limit - 0.1:
+        while time.time() - start_time < self.time_limit - 0.02:
             self.selection(root_node)
         
         # Select best move by visit count
@@ -361,11 +362,6 @@ class CommandInterface:
         if node.untried_moves is None:
             node.untried_moves = self.get_moves()
         
-        # Check terminal
-        score = self.get_relative_score()
-        if score is not None:
-            return score
-        
         # No moves left to expand
         if not node.untried_moves:
             return 0.0
@@ -399,7 +395,7 @@ class CommandInterface:
         if node.untried_moves:
             value = self.expand_node(node)
             node.score_total += value
-            node.visits +=   1
+            node.visits += 1
             return value
         
         # Otherwise, select best child by UCB
